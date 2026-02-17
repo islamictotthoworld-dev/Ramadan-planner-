@@ -1,0 +1,180 @@
+<!DOCTYPE html>
+<html lang="bn">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>রমাদান প্ল্যানার ২০২৫ | আস-সুন্নাহ ফাউন্ডেশন ভিত্তিক</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <link href="https://fonts.googleapis.com/css2?family=Hind+Siliguri:wght@300;400;600;700&display=swap" rel="stylesheet">
+    <style>
+        body { font-family: 'Hind Siliguri', sans-serif; transition: 0.3s; }
+        .dark-mode { background-color: #0f172a; color: white; }
+        .dark-mode .card { background-color: #1e293b; border-color: #334155; }
+        .hidden { display: none; }
+    </style>
+</head>
+<body class="bg-slate-50 text-slate-900 pb-20">
+
+    <div id="auth-screen" class="fixed inset-0 z-[100] bg-emerald-900 flex flex-col items-center justify-center p-6 text-white text-center">
+        <h1 class="text-4xl font-bold mb-4 italic">রমাদান প্ল্যানার ২০২৫</h1>
+        <p class="mb-8 opacity-80">আপনার ৩০ দিনের আমলগুলো গুছিয়ে নিন এবং ডাটাবেসে সেভ রাখুন।</p>
+        <button id="login-btn" class="bg-white text-emerald-900 px-10 py-4 rounded-full font-bold shadow-2xl flex items-center gap-3 transition hover:scale-105 active:scale-95">
+            <img src="https://www.gstatic.com/firebasejs/ui/2.0.0/images/action/google.svg" width="22">
+            গুগল দিয়ে শুরু করুন
+        </button>
+    </div>
+
+    <div id="main-app" class="hidden">
+        <header class="bg-emerald-800 text-white p-6 rounded-b-[2.5rem] shadow-xl sticky top-0 z-40">
+            <div class="flex justify-between items-center max-w-md mx-auto">
+                <div>
+                    <h2 class="text-2xl font-bold">রমাদান ২০২৫</h2>
+                    <p id="user-display-name" class="text-xs opacity-75"></p>
+                </div>
+                <div class="flex gap-3">
+                    <button onclick="toggleDarkMode()" class="p-2 bg-white/10 rounded-full">🌙</button>
+                    <button onclick="logoutUser()" class="p-2 bg-red-500/20 rounded-full">🚪</button>
+                </div>
+            </div>
+            <div class="mt-6 flex justify-between items-center bg-black/20 p-2 rounded-xl max-w-md mx-auto">
+                <button onclick="changeDay(-1)" class="p-2">◀</button>
+                <span id="current-day-label" class="font-bold">১ম রমাদান</span>
+                <button onclick="changeDay(1)" class="p-2">▶</button>
+            </div>
+        </header>
+
+        <main class="max-w-md mx-auto p-4 space-y-6">
+            <div class="card bg-white p-5 rounded-2xl shadow-sm border border-slate-100">
+                <div class="flex justify-between text-sm font-bold mb-2">
+                    <span>আজকের অগ্রগতি</span>
+                    <span id="progress-percent">০%</span>
+                </div>
+                <div class="w-full bg-slate-200 h-3 rounded-full overflow-hidden">
+                    <div id="progress-bar" class="bg-emerald-600 h-full transition-all duration-700" style="width: 0%"></div>
+                </div>
+            </div>
+
+            <div id="daily-content" class="space-y-4">
+                </div>
+
+            <div class="bg-white card p-5 rounded-2xl shadow-sm">
+                <h3 class="font-bold text-emerald-800 mb-4 flex items-center gap-2">✅ ইবাদত ট্র্যাকার</h3>
+                <div id="checklist-container" class="space-y-3"></div>
+            </div>
+        </main>
+    </div>
+
+    <script type="module">
+        import { initializeApp } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-app.js";
+        import { getAuth, signInWithPopup, GoogleAuthProvider, onAuthStateChanged, signOut } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-auth.js";
+        import { getFirestore, doc, getDoc, setDoc, updateDoc } from "https://www.gstatic.com/firebasejs/10.7.1/firebase-firestore.js";
+
+        const firebaseConfig = {
+            apiKey: "AIzaSyBkoLyBWEdMHZBoSJ3IvCj9C3NtDqQfX2g",
+            authDomain: "ramadan-planner-ddda7.firebaseapp.com",
+            projectId: "ramadan-planner-ddda7",
+            storageBucket: "ramadan-planner-ddda7.firebasestorage.app",
+            messagingSenderId: "88126793642",
+            appId: "1:88126793642:web:d20e1847b613381dcb6dd3",
+            measurementId: "G-GYGLBZ51TX"
+        };
+
+        const app = initializeApp(firebaseConfig);
+        const auth = getAuth(app);
+        const db = getFirestore(app);
+        const provider = new GoogleAuthProvider();
+
+        let currentDay = 1;
+        let userData = { progress: {} };
+
+        // ১. লগইন লজিক
+        document.getElementById('login-btn').addEventListener('click', () => {
+            signInWithPopup(auth, provider).catch(e => alert("লগইন ভুল: " + e.message));
+        });
+
+        window.logoutUser = () => { if(confirm("লগআউট করতে চান?")) signOut(auth); };
+
+        onAuthStateChanged(auth, async (user) => {
+            if (user) {
+                document.getElementById('auth-screen').classList.add('hidden');
+                document.getElementById('main-app').classList.remove('hidden');
+                document.getElementById('user-display-name').innerText = user.displayName;
+                await syncUser(user);
+            } else {
+                document.getElementById('auth-screen').classList.remove('hidden');
+                document.getElementById('main-app').classList.add('hidden');
+            }
+        });
+
+        // ২. ডাটাবেজ সিঙ্ক
+        async function syncUser(user) {
+            const userRef = doc(db, "users", user.uid);
+            const userSnap = await getDoc(userRef);
+            if (!userSnap.exists()) {
+                await setDoc(userRef, { name: user.displayName, progress: {} });
+                userData = { progress: {} };
+            } else {
+                userData = userSnap.data();
+            }
+            renderUI();
+        }
+
+        // ৩. ইবাদত আইটেমস (বই অনুযায়ী)
+        const tasks = [
+            "জামাআতে সালাত আদায়", "কুরআন তিলাওয়াত ও অনুধাবন", "সকাল-সন্ধ্যার যিক্র", 
+            "দান-সদাকা", "ইস্তিগফার (৭০ বার)", "মিসওয়াক করা", "আত্মীয়কে কল করা"
+        ];
+
+        function renderUI() {
+            document.getElementById('current-day-label').innerText = `${currentDay}ম রমাদান`;
+            
+            // বইয়ের ডাটা রেন্ডার (নমুনা)
+            document.getElementById('daily-content').innerHTML = `
+                <div class="bg-emerald-50 dark:bg-emerald-900/20 p-5 rounded-2xl border-l-4 border-emerald-600">
+                    <h4 class="font-bold text-emerald-800">📖 আজকের আয়াত</h4>
+                    <p class="text-sm mt-1">"হে মুমিনগণ! তোমাদের ওপর রোজা ফরজ করা হয়েছে..." (সূরা বাকারা: ১৮৩)</p>
+                </div>
+            `;
+
+            const container = document.getElementById('checklist-container');
+            container.innerHTML = '';
+            let completed = 0;
+
+            tasks.forEach((task, i) => {
+                const id = `day${currentDay}_task${i}`;
+                const checked = userData.progress[id] ? 'checked' : '';
+                if(userData.progress[id]) completed++;
+                
+                container.innerHTML += `
+                    <div class="flex items-center gap-3 p-2">
+                        <input type="checkbox" ${checked} onchange="saveTask('${id}', this.checked)" class="w-6 h-6 accent-emerald-600">
+                        <label class="text-sm font-medium">${task}</label>
+                    </div>
+                `;
+            });
+
+            const percent = Math.round((completed / tasks.length) * 100);
+            document.getElementById('progress-bar').style.width = percent + '%';
+            document.getElementById('progress-percent').innerText = percent + '%';
+        }
+
+        window.saveTask = async (id, isChecked) => {
+            userData.progress[id] = isChecked;
+            const userRef = doc(db, "users", auth.currentUser.uid);
+            await updateDoc(userRef, { progress: userData.progress });
+            renderUI();
+        };
+
+        window.changeDay = (step) => {
+            if(currentDay + step >= 1 && currentDay + step <= 30) {
+                currentDay += step;
+                renderUI();
+            }
+        };
+
+        window.toggleDarkMode = () => {
+            document.body.classList.toggle('dark-mode');
+        };
+    </script>
+</body>
+</html>
